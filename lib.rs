@@ -101,7 +101,7 @@ mod my_substrate_contract {
 
         fn random(&self) -> Option<ChooseOption> {
             let (hash, _) = self.env().random(self.env().caller().as_ref());
-            let random = u128::from_be_bytes(hash.as_ref().try_into().unwrap()) % 3;
+            let random = u128::from_be_bytes(hash.as_ref()[0..16].try_into().unwrap()) % 3;
             ChooseOption::to_option(random as u8)
         }
 
@@ -128,6 +128,11 @@ mod my_substrate_contract {
         /// Imports `ink_lang` so we can use `#[ink::test]`.
         use ink_lang as ink;
 
+        #[ink::test]
+    fn test1() {
+        let mut my_substrate_contract = MySubstrateContract::new();
+        my_substrate_contract.play(0u8);
+    }
         // /// We test if the default constructor does its job.
         // #[ink::test]
         // fn default_works() {
