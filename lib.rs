@@ -1,9 +1,10 @@
 #![cfg_attr(not(feature = "std"), no_std)]
-
 use ink_lang as ink;
-use scale::{Decode, Encode};
-use ink_storage::traits::{SpreadAllocate, SpreadLayout, PackedLayout};
 use ink_prelude::string::String;
+use ink_prelude::vec::Vec;
+use ink_storage::traits::{PackedLayout, SpreadAllocate, SpreadLayout};
+use ink_storage::Mapping;
+use scale::{Decode, Encode};
 // use std::collections::HashMap;
 // #[cfg_attr(
 //     feature = "std",
@@ -28,8 +29,6 @@ pub enum ChooseOption {
     Paper,
     Scissors,
 }
-
-
 
 impl ChooseOption {
     fn to_option(num: u8) -> Option<ChooseOption> {
@@ -64,12 +63,14 @@ impl ChooseOption {
 
 #[ink::contract]
 mod my_substrate_contract {
+    use ink::ToAccountId;
+
     use super::*;
 
     #[ink(event)]
-    pub struct Player{
+    pub struct Player {
         player: AccountId,
-        result: String
+        result: String,
     }
     /// Defines the storage of your contract.
     /// Add new fields to the below struct in order
@@ -85,13 +86,18 @@ mod my_substrate_contract {
 
     #[ink(storage)]
     #[derive(SpreadAllocate)]
-    pub struct MySubstrateContract {}
+    pub struct MySubstrateContract {
+        winners: Mapping<u128, AccountId>,
+        count: u128,
+    }
 
     impl MySubstrateContract {
         /// Constructor that initializes the `bool` value to the given `init_value`.
         #[ink(constructor)]
         pub fn new() -> Self {
-            ink_lang::utils::initialize_contract(|_| {})
+            ink_lang::utils::initialize_contract(|contract: &mut Self| {
+                contract.count = 0;
+            })
         }
 
         // #[ink(constructor)]
@@ -100,20 +106,38 @@ mod my_substrate_contract {
         // }
 
         fn random(&self) -> Option<ChooseOption> {
-            let (hash, _) = self.env().random(self.env().caller().as_ref());
+            let (hash, _) = self
+                .env()
+                .random(self.env().block_number().to_be_bytes().as_ref());
             let random = u128::from_be_bytes(hash.as_ref()[0..16].try_into().unwrap()) % 3;
             ChooseOption::to_option(random as u8)
         }
 
         #[ink(message)]
         pub fn play(&mut self, choose_option: u8) {
+            self.count += 1;
             let random = self.random().expect("random error");
             let choose = ChooseOption::to_option(choose_option).expect("choice error");
             let result = choose.find_winner(&random);
-            self.env().emit_event(Player{
-                player: self.env().caller(), 
-                result: result
+            match result.as_ref() {
+                "Win" => self.winners.insert(self.count, &self.env().caller()),
+                "Lose" => self.winners.insert(self.count, &self.env().account_id()),
+                _ => {}
+            }
+            self.env().emit_event(Player {
+                player: self.env().caller(),
+                result: result,
             })
+        }
+
+        #[ink(message)]
+        pub fn get_winners(&self) -> Vec<Option<AccountId>> {
+            let mut result: Vec<Option<AccountId>> = Vec::new();
+            for i in 0..self.count {
+                result.push(self.winners.get(i))
+            }
+
+            result
         }
     }
 
@@ -129,10 +153,10 @@ mod my_substrate_contract {
         use ink_lang as ink;
 
         #[ink::test]
-    fn test1() {
-        let mut my_substrate_contract = MySubstrateContract::new();
-        my_substrate_contract.play(0u8);
-    }
+        fn test1() {
+            let mut my_substrate_contract = MySubstrateContract::new();
+            my_substrate_contract.play(0u8);
+        }
         // /// We test if the default constructor does its job.
         // #[ink::test]
         // fn default_works() {
